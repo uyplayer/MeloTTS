@@ -2,9 +2,9 @@ import pickle
 import os
 import re
 
-from . import symbols
-from .es_phonemizer import cleaner as es_cleaner
-from .es_phonemizer import es_to_ipa
+import symbols
+from melo.text.es_phonemizer import cleaner as es_cleaner
+from melo.text.es_phonemizer import es_to_ipa
 from transformers import AutoTokenizer
 
 
@@ -106,7 +106,7 @@ def g2p(text, pad_start_end=True, tokenized=None):
     return phones, tones, word2ph
 
 def get_bert_feature(text, word2ph, device=None):
-    from text import spanish_bert
+    from melo.text import spanish_bert
     return spanish_bert.get_bert_feature(text, word2ph, device=device)
 
 if __name__ == "__main__":
