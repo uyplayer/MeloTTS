@@ -67,7 +67,7 @@ def distribute_phone(n_phone, n_word):
     return phones_per_word
 
 
-def g2p_uyghur(norm_text):
+def g2p(norm_text):
     tokenized = tokenizer.tokenize(norm_text)
     phs = []
     ph_groups = []
@@ -110,11 +110,10 @@ def g2p_uyghur(norm_text):
 
 if __name__ == '__main__':
     text = "بۇ بىر سىناش ماتېرىيال! 这是测试文本。"
-    normalized_text = normalize(text)
-    print(normalized_text)
-    model_id = "xlm-roberta-base"
-    tokenizer = AutoTokenizer.from_pretrained(pre_trained_model)
-    res = tokenizer.tokenize(normalized_text)
-    for item in res:
-        print(item)
+    text = text_normalize(text)
+    print(text)
+    phones, tones, word2ph = g2p(text)
+    bert = get_bert_feature(text, word2ph)
+
+    print(phones, tones, word2ph, bert.shape)
 
