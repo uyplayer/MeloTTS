@@ -27,15 +27,15 @@ def text_normalize(text):
 
 def post_replace_ph(ph):
     rep_map = {
-        "،": ",",  # 顿号
-        "؛": ",",  # 分号
-        "?": "؟",  # 问号
-        "！": "!",  # 感叹号
-        "。": ".",  # 句号
-        "٫": ",",  # 阿拉伯千位分隔符
-        "：": ":",  # 冒号
-        "\n": ".",  # 换行符替换为句号
-        "...": "…",  # 省略号替换
+        "،": ",",
+        "؛": ",",
+        "?": "؟",
+        "！": "!",
+        "。": ".",
+        "٫": ",",
+        "：": ":",
+        "\n": ".",
+        "...": "…",
     }
     if ph in rep_map.keys():
         ph = rep_map[ph]
@@ -73,11 +73,17 @@ ipa = epitran.Epitran('uig-Arab')
 def g2p(text, pad_start_end=True, tokenized=None):
     if tokenized is None:
         tokenized = tokenizer.tokenize(text)
+    print(tokenized)
     phs = []
     ph_groups = []
-    if tokenized[0] == "▁":
-        tokenized[1] = tokenized[0] + tokenized[1]
-        tokenized = tokenized[1:]
+    i = 0
+    while i < len(tokenized):
+        if tokenized[i] == "▁":
+            if i + 1 < len(tokenized):
+                tokenized[i + 1] = tokenized[i] + tokenized[i + 1]
+            tokenized.pop(i)
+        else:
+            i += 1
     for token in tokenized:
         if token.startswith("▁") or len(token) == 1:
             ph_groups.append([token.replace("▁", "")])
@@ -113,12 +119,11 @@ def get_bert_feature(text, word2ph, device=None):
 
 
 if __name__ == "__main__":
-    text = "ئايدا ئىككى قېتىم دەرسكە كەلمىگەن ئوقۇغۇچىلار دەرستىن چېكىندۈرۈلىدۇ."
+    text = "ئايدا ئىككى قېتىم دەرسكە كەلمىگەن ئوقۇغۇچىلار دەرستىن چېكىندۈرۈلىدۇ.1111"
     print(text)
     cleaner = TextCleaner()
     cleaned_text = cleaner.clean_text(text)
-    print(text)
-    phones, tones, word2ph = g2p(text)
+    phones, tones, word2ph = g2p(cleaned_text)
     print(phones)
     print(tones)
     print(word2ph)
