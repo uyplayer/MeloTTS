@@ -1,119 +1,125 @@
 import re
-import unicodedata
-from num2words import num2words
-from transformers import AutoTokenizer
-
-from ug_dictionary import english_dictionary ,etc_dictionary
 import symbols
-import MeCab
-
-# 维吾尔语的标点符号
-punctuation = [
-    "!", "?", "…", ",", ".", "'", "-",
-    "؛", "«", "»", "ـ", "،", "؟", "٪", "ـ"
-]
-
-
-pre_trained_model = "xlm-roberta-base"
-tokenizer = AutoTokenizer.from_pretrained(pre_trained_model)
-def normalize(text:str):
-    text = text.strip()
-    text = unicodedata.normalize('NFKC', text)
-    # 删除除维吾尔语、阿拉伯语和常用标点符号外的所有字符
-    # 维吾尔语使用阿拉伯字母，且维吾尔语文本可能包含拉丁字母和阿拉伯数字
-    text = re.sub(r'[^\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF\u0041-\u005A\u0061-\u007A0-9 \t\n\r\f\v' + ''.join(map(re.escape, punctuation)) + ']', '', text)
-    text = normalize_with_dictionary(text, etc_dictionary)
-    text = normalize_english(text)
-    text = text.lower()
-    return text
-
-def normalize_with_dictionary(text, dic):
-    if any(key in text for key in dic.keys()):
-        pattern = re.compile("|".join(re.escape(key) for key in dic.keys()))
-        return pattern.sub(lambda x: dic[x.group()], text)
-    return text
-def normalize_english(text:str):
-    def fn(m):
-        word = m.group().upper()
-        if word in english_dictionary:
-            return english_dictionary.get(word)
-        return word
-
-    text = re.sub("([A-Za-z]+)", fn, text)
-    return text
-
-def text_normalize(text):
-    text = uyghur_convert_numbers_to_words(text)
-    text = uyghur_convert_alpha_symbols_to_words(text)
-    text = normalize(text)
-    return text
-
-def uyghur_text_to_phonemes(text:str):
-    return text
-
-def uyghur_convert_numbers_to_words(text:str):
-    return text
-def uyghur_convert_alpha_symbols_to_words(text:str):
-    text = re.sub(r'[A-Za-z]', lambda x: english_dictionary.get(x.group().upper(), x.group()), text)
-    return text
-
+from melo.text.es_phonemizer import cleaner as es_cleaner
+from melo.text.es_phonemizer import es_to_ipa
+from transformers import AutoTokenizer
+from melo.text.ug_utils.text_processing.text_cleaner import TextCleaner
+from melo.text.ug_utils.tokenizer.FairseqXLMRTokenizer import FairseqXLMRTokenizer
+from melo.text.ug_utils.tokenizer.XLMRobertaTokenizer import XLMRobertaTokenizer
+import epitran
 
 def distribute_phone(n_phone, n_word):
     phones_per_word = [0] * n_word
-    for _ in range(n_phone):
+    for task in range(n_phone):
         min_tasks = min(phones_per_word)
         min_index = phones_per_word.index(min_tasks)
         phones_per_word[min_index] += 1
     return phones_per_word
 
 
-def g2p(norm_text):
-    tokenized = tokenizer.tokenize(norm_text)
+cleaner = TextCleaner()
+
+
+def text_normalize(text):
+    cleaned_text = cleaner.clean_text(text)
+    return cleaned_text
+
+
+def post_replace_ph(ph):
+    rep_map = {
+        "،": ",",  # 顿号
+        "؛": ",",  # 分号
+        "?": "؟",  # 问号
+        "！": "!",  # 感叹号
+        "。": ".",  # 句号
+        "٫": ",",  # 阿拉伯千位分隔符
+        "：": ":",  # 冒号
+        "\n": ".",  # 换行符替换为句号
+        "...": "…",  # 省略号替换
+    }
+    if ph in rep_map.keys():
+        ph = rep_map[ph]
+    if ph in symbols:
+        return ph
+    if ph not in symbols:
+        ph = "UNK"
+    return ph
+
+
+def refine_ph(phn):
+    tone = 0
+    if re.search(r"\d$", phn):
+        tone = int(phn[-1]) + 1
+        phn = phn[:-1]
+    return phn.lower(), tone
+
+
+def refine_syllables(syllables):
+    tones = []
+    phonemes = []
+    for phn_list in syllables:
+        for i in range(len(phn_list)):
+            phn = phn_list[i]
+            phn, tone = refine_ph(phn)
+            phonemes.append(phn)
+            tones.append(tone)
+    return phonemes, tones
+
+
+# tokenizer = FairseqXLMRTokenizer()
+tokenizer = XLMRobertaTokenizer()
+ipa = epitran.Epitran('uig-Arab')
+
+def g2p(text, pad_start_end=True, tokenized=None):
+    if tokenized is None:
+        tokenized = tokenizer.tokenize(text)
     phs = []
     ph_groups = []
-    for t in tokenized:
-        if not t.startswith("#"):
-            ph_groups.append([t])
+    if tokenized[0] == "▁":
+        tokenized[1] = tokenized[0] + tokenized[1]
+        tokenized = tokenized[1:]
+    for token in tokenized:
+        if token.startswith("▁") or len(token) == 1:
+            ph_groups.append([token.replace("▁", "")])
         else:
-            ph_groups[-1].append(t.replace("#", ""))
-
+            ph_groups[-1].append(token)
+    phones = []
+    tones = []
     word2ph = []
+    # print(ph_groups)
     for group in ph_groups:
-        text = ""
-        for ch in group:
-            text += ch
-        if text == '[UNK]':
-            phs += ['_']
-            word2ph += [1]
-            continue
-        elif text in punctuation:
-            phs += [text]
-            word2ph += [1]
-            continue
-        phonemes = uyghur_text_to_phonemes(text)
-        phone_len = len(phonemes)
+        w = "".join(group)
+        phone_len = 0
         word_len = len(group)
+        if w == '[UNK]':
+            phone_list = ['UNK']
+        else:
+            phone_list = list(filter(lambda p: p != " ", ipa.trans_list(w)))
 
+        for ph in phone_list:
+            phones.append(ph)
+            tones.append(0)
+            phone_len += 1
         aaa = distribute_phone(phone_len, word_len)
-        assert len(aaa) == word_len
         word2ph += aaa
-
-        phs += phonemes
-
-    phones = ["_"] + phs + ["_"]
-    tones = [0 for _ in phones]
-    word2ph = [1] + word2ph + [1]
-    assert len(word2ph) == len(tokenized) + 2
-
+    if pad_start_end:
+        phones = ["_"] + phones + ["_"]
+        tones = [0] + tones + [0]
+        word2ph = [1] + word2ph + [1]
     return phones, tones, word2ph
+def get_bert_feature(text, word2ph, device=None):
+    from melo.text import spanish_bert
+    return spanish_bert.get_bert_feature(text, word2ph, device=device)
 
 
-if __name__ == '__main__':
-    text = "بۇ بىر سىناش ماتېرىيال! 这是测试文本。"
-    text = text_normalize(text)
+if __name__ == "__main__":
+    text = "ئايدا ئىككى قېتىم دەرسكە كەلمىگەن ئوقۇغۇچىلار دەرستىن چېكىندۈرۈلىدۇ."
+    print(text)
+    cleaner = TextCleaner()
+    cleaned_text = cleaner.clean_text(text)
     print(text)
     phones, tones, word2ph = g2p(text)
-    bert = get_bert_feature(text, word2ph)
-
-    print(phones, tones, word2ph, bert.shape)
+    print(phones)
+    print(tones)
+    print(word2ph)
 
