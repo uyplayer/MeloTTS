@@ -114,8 +114,8 @@ def g2p(text, pad_start_end=True, tokenized=None):
         word2ph = [1] + word2ph + [1]
     return phones, tones, word2ph
 def get_bert_feature(text, word2ph, device=None):
-    from melo.text import spanish_bert
-    return spanish_bert.get_bert_feature(text, word2ph, device=device)
+    from melo.text import uyghur_bert
+    return uyghur_bert.get_bert_feature(text, word2ph, device=device)
 
 
 if __name__ == "__main__":
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     cleaner = TextCleaner()
     cleaned_text = cleaner.clean_text(text)
     phones, tones, word2ph = g2p(cleaned_text)
+    bert = get_bert_feature(text, word2ph)
     print(phones)
-    print(tones)
-    print(word2ph)
+    print(len(phones), tones, sum(word2ph), bert.shape)
 
